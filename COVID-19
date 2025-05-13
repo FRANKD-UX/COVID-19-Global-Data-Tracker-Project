@@ -1,0 +1,346 @@
+# COVID-19 Global Data Tracker
+## Data Analysis and Visualization Project
+
+### Introduction
+This notebook analyzes global COVID-19 trends including cases, deaths, recoveries, and vaccinations across countries and time periods. We'll use real-world data from Our World in Data to generate insights and visualizations.
+
+
+
+# Import necessary libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
+
+# Set visualization styles
+plt.style.use('seaborn-v0_8-whitegrid')
+sns.set_palette("deep")
+
+
+### 2. Data Loading & Exploration
+
+
+# Load the dataset
+# For this notebook, we'll use the URL directly, but you could download it locally
+url = "https://covid.ourworldindata.org/data/owid-covid-data.csv"
+df = pd.read_csv(url)
+
+# Display basic information about the dataset
+print(f"Dataset shape: {df.shape}")
+print("\nFirst 5 rows of the dataset:")
+df.head()
+
+# Get column names
+print("Dataset columns:")
+print(df.columns.tolist())
+
+
+# Calculate percentage of missing values for each column
+missing_values = df.isnull().mean().sort_values(ascending=False) * 100
+missing_values = missing_values[missing_values > 0]
+
+print(f"Number of columns with missing values: {len(missing_values)}")
+print("\nTop 10 columns with highest percentage of missing values:")
+missing_values.head(10)
+
+# Convert date to datetime
+df['date'] = pd.to_datetime(df['date'])
+
+# Check date range
+print(f"Date range: {df['date'].min()} to {df['date'].max()}")
+
+
+### 3. Data Cleaning
+
+# Select countries of interest for detailed analysis
+countries_of_interest = ['United States', 'India', 'Brazil', 'United Kingdom', 'Russia', 
+                        'France', 'Germany', 'South Africa', 'Kenya', 'China']
+
+# Filter for countries of interest
+filtered_df = df[df['location'].isin(countries_of_interest)]
+
+# Check the number of records for each country
+country_counts = filtered_df['location'].value_counts()
+print("Number of records per country:")
+country_counts
+
+
+# Filter out continents, World, and other non-country entities for our country-level analysis
+continents = ['World', 'Asia', 'Europe', 'North America', 'South America', 'Africa', 'Oceania', 
+              'European Union', 'High income', 'Upper middle income', 'Lower middle income', 'Low income']
+
+# Create a separate dataframe for continent-level analysis
+continent_df = df[df['location'].isin(continents)]
+
+# Create a clean country-level dataframe (excluding continents and aggregate categories)
+country_df = df[~df['location'].isin(continents)]
+
+
+# For each country, forward-fill missing values in important metrics
+key_metrics = ['total_cases', 'new_cases', 'total_deaths', 'new_deaths', 
+               'total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated']
+
+# Group by location and forward fill missing values
+for metric in key_metrics:
+    if metric in filtered_df.columns:
+        filtered_df[metric] = filtered_df.groupby('location')[metric].transform(
+            lambda x: x.fillna(method='ffill')
+        )
+
+
+### 4. Exploratory Data Analysis (EDA)
+
+Now, let's start analyzing the data:
+
+#### 4.1 Total Cases Over Time
+
+# Create a pivot table for total cases by country and date
+cases_pivot = filtered_df.pivot(index='date', columns='location', values='total_cases')
+
+# Plot total cases over time
+plt.figure(figsize=(14, 8))
+for country in cases_pivot.columns:
+    plt.plot(cases_pivot.index, cases_pivot[country], label=country, linewidth=2)
+
+plt.title('Total COVID-19 Cases Over Time', fontsize=16)
+plt.xlabel('Date', fontsize=14)
+plt.ylabel('Total Cases', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(title='Country', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+# Plot with log scale for better comparison
+plt.figure(figsize=(14, 8))
+for country in cases_pivot.columns:
+    plt.plot(cases_pivot.index, cases_pivot[country], label=country, linewidth=2)
+
+plt.title('Total COVID-19 Cases Over Time (Log Scale)', fontsize=16)
+plt.xlabel('Date', fontsize=14)
+plt.ylabel('Total Cases (Log Scale)', fontsize=14)
+plt.yscale('log')
+plt.grid(True, alpha=0.3)
+plt.legend(title='Country', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+
+#### 4.2 Total Deaths Over Time
+
+# Create a pivot table for total deaths by country and date
+deaths_pivot = filtered_df.pivot(index='date', columns='location', values='total_deaths')
+
+# Plot total deaths over time
+plt.figure(figsize=(14, 8))
+for country in deaths_pivot.columns:
+    plt.plot(deaths_pivot.index, deaths_pivot[country], label=country, linewidth=2)
+
+plt.title('Total COVID-19 Deaths Over Time', fontsize=16)
+plt.xlabel('Date', fontsize=14)
+plt.ylabel('Total Deaths', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(title='Country', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+
+#### 4.3 Daily New Cases
+
+# Create a 7-day rolling average of new cases for smoother visualization
+filtered_df['new_cases_smoothed'] = filtered_df.groupby('location')['new_cases'].transform(
+    lambda x: x.rolling(7, min_periods=1).mean()
+)
+
+# Create a pivot table for new cases (smoothed) by country and date
+new_cases_pivot = filtered_df.pivot(index='date', columns='location', values='new_cases_smoothed')
+
+# Plot new cases over time
+plt.figure(figsize=(14, 8))
+for country in new_cases_pivot.columns:
+    plt.plot(new_cases_pivot.index, new_cases_pivot[country], label=country, linewidth=2)
+
+plt.title('Daily New COVID-19 Cases (7-day Rolling Average)', fontsize=16)
+plt.xlabel('Date', fontsize=14)
+plt.ylabel('New Cases', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(title='Country', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+
+#### 4.4 Death Rate Analysis
+
+# Calculate death rate (as a percentage)
+filtered_df['death_rate'] = (filtered_df['total_deaths'] / filtered_df['total_cases']) * 100
+
+# Get the most recent data point for each country
+latest_data = filtered_df.sort_values('date').groupby('location').last().reset_index()
+
+# Plot death rates by country
+plt.figure(figsize=(12, 8))
+sns.barplot(x='location', y='death_rate', data=latest_data.sort_values('death_rate', ascending=False))
+plt.title('COVID-19 Death Rate by Country (Latest Data)', fontsize=16)
+plt.xlabel('Country', fontsize=14)
+plt.ylabel('Death Rate (%)', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+
+
+### 5. Vaccination Analysis
+
+
+# Create a pivot table for vaccination data
+vax_pivot = filtered_df.pivot(index='date', columns='location', values='people_fully_vaccinated')
+
+# Calculate percentage of population vaccinated
+for country in countries_of_interest:
+    country_data = filtered_df[filtered_df['location'] == country]
+    if not country_data.empty and 'people_fully_vaccinated' in country_data.columns:
+        latest_pop = country_data['population'].iloc[-1]
+        if not pd.isna(latest_pop) and latest_pop > 0:
+            filtered_df.loc[filtered_df['location'] == country, 'pct_vaccinated'] = (
+                filtered_df.loc[filtered_df['location'] == country, 'people_fully_vaccinated'] / latest_pop * 100
+            )
+
+# Plot vaccination progress
+plt.figure(figsize=(14, 8))
+vax_pivot = filtered_df.pivot(index='date', columns='location', values='pct_vaccinated')
+
+for country in vax_pivot.columns:
+    plt.plot(vax_pivot.index, vax_pivot[country], label=country, linewidth=2)
+
+plt.title('Percentage of Population Fully Vaccinated', fontsize=16)
+plt.xlabel('Date', fontsize=14)
+plt.ylabel('% of Population', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(title='Country', fontsize=12)
+plt.tight_layout()
+plt.ylim(0, 100)  # Set y-axis limits between 0-100%
+plt.show()
+
+# Get the latest vaccination data for each country
+latest_vax_data = filtered_df.sort_values('date').groupby('location').last().reset_index()
+
+# Plot the latest vaccination percentages
+plt.figure(figsize=(12, 8))
+sns.barplot(x='location', y='pct_vaccinated', data=latest_vax_data.sort_values('pct_vaccinated', ascending=False))
+plt.title('Latest COVID-19 Vaccination Rates by Country', fontsize=16)
+plt.xlabel('Country', fontsize=14)
+plt.ylabel('% of Population Fully Vaccinated', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+
+
+### 6. Choropleth Map Visualization
+
+
+# Get the most recent data for each country
+latest_global_data = df.sort_values('date').groupby('location').last().reset_index()
+
+# Create a choropleth map for total cases per million
+try:
+    fig_cases = px.choropleth(
+        latest_global_data,
+        locations="iso_code",
+        color="total_cases_per_million",
+        hover_name="location",
+        color_continuous_scale="Reds",
+        projection="natural earth",
+        title="COVID-19 Total Cases per Million",
+        hover_data=["total_cases", "total_deaths", "date"]
+    )
+    fig_cases.show()
+except Exception as e:
+    print(f"Error creating cases choropleth: {e}")
+    print("If you're running this notebook locally, you'll need an internet connection for Plotly maps.")
+
+# Create a choropleth map for vaccination rates
+try:
+    # Calculate vaccination percentage for map
+    latest_global_data['vaccination_percentage'] = latest_global_data['people_fully_vaccinated'] / latest_global_data['population'] * 100
+    
+    fig_vax = px.choropleth(
+        latest_global_data,
+        locations="iso_code",
+        color="vaccination_percentage",
+        hover_name="location",
+        color_continuous_scale="Blues",
+        projection="natural earth",
+        title="COVID-19 Vaccination Rates (% of Population)",
+        hover_data=["people_fully_vaccinated", "population", "date"]
+    )
+    fig_vax.show()
+except Exception as e:
+    print(f"Error creating vaccination choropleth: {e}")
+    print("If you're running this notebook locally, you'll need an internet connection for Plotly maps.")
+
+
+### 7. Additional Analysis: Case Fatality Rate Over Time
+
+
+# Calculate case fatality rate (CFR) over time for countries of interest
+filtered_df['cfr'] = filtered_df['total_deaths'] / filtered_df['total_cases'] * 100
+
+# Create pivot table for CFR
+cfr_pivot = filtered_df.pivot(index='date', columns='location', values='cfr')
+
+# Plot CFR over time
+plt.figure(figsize=(14, 8))
+for country in cfr_pivot.columns:
+    plt.plot(cfr_pivot.index, cfr_pivot[country], label=country, linewidth=2)
+
+plt.title('COVID-19 Case Fatality Rate Over Time', fontsize=16)
+plt.xlabel('Date', fontsize=14)
+plt.ylabel('Case Fatality Rate (%)', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(title='Country', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+
+### 8. Key Insights and Analysis
+
+
+# Let's identify the top countries by total cases, deaths, and vaccination rates
+latest_data = filtered_df.sort_values('date').groupby('location').last().reset_index()
+
+# Sort by different metrics
+top_cases = latest_data.sort_values('total_cases', ascending=False)[['location', 'total_cases']].head(5)
+top_deaths = latest_data.sort_values('total_deaths', ascending=False)[['location', 'total_deaths']].head(5)
+top_vax = latest_data.sort_values('pct_vaccinated', ascending=False)[['location', 'pct_vaccinated']].head(5)
+
+# Display results
+print("Top 5 Countries by Total Cases:")
+display(top_cases)
+
+print("\nTop 5 Countries by Total Deaths:")
+display(top_deaths)
+
+print("\nTop 5 Countries by Vaccination Rate:")
+display(top_vax)
+
+#### Key Findings
+
+1. **Case Trends**: The United States, India, and Brazil consistently show the highest total case counts among our selected countries.
+
+2. **Death Rates**: Countries have experienced varying death rates, with some developing countries showing higher rates, possibly due to healthcare system capacity, testing, and reporting differences.
+
+3. **Vaccination Progress**: There's a clear disparity in vaccination rates between developed and developing nations, with some European countries and the US achieving higher vaccination rates earlier.
+
+4. **Waves of Infection**: Most countries experienced multiple waves of infection, often coinciding with the emergence of new variants.
+
+5. **Case Fatality Rate Decline**: CFR has generally declined over time, likely due to improvements in treatment protocols, increased testing, and vaccination effects.
+
+### 9. Conclusion
+
+This analysis provides insights into how the COVID-19 pandemic has affected different countries around the world. The disparities in case numbers, death rates, and vaccination progress highlight differences in healthcare systems, policy responses, and resource availability.
+
+For future analysis, it would be valuable to incorporate policy data to understand the impact of lockdowns, mask mandates, and other interventions on case trajectories. Additionally, analyzing the effects of vaccination on subsequent waves would provide further insights.
+
+This notebook serves as a starting point for COVID-19 data analysis and can be updated as new data becomes available.
